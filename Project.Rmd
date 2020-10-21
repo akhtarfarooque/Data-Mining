@@ -1,0 +1,909 @@
+---
+title: "Project"
+output: html_notebook
+---
+
+```{r}
+library(dummies)
+library(ltm)
+library(dplyr)
+library(readxl)
+library(psych)
+require(MASS)
+library(FNN)
+library(adabag)
+library(rpart) 
+library(caret)
+library(randomForest)
+library(party)
+library(ROCR)
+library(ggplot2)
+library(rpart.plot)
+library(pROC)
+```
+
+```{r}
+bank <- bank.full
+View(bank)
+```
+# checking the missing values in the dataset
+```{r}
+sum(is.na(bank))
+```
+
+# Performing OverSampling to Data as the number of success cases are very less as compared to the failure cases
+```{r}
+success <- bank[bank$y == "yes",]
+success
+nrow(success)
+```
+```{r}
+failure <- bank[bank$y == "no",]
+failure
+nrow(failure)
+```
+```{r}
+set.seed(1)
+bank_success <- success[sample(nrow(success),nrow(success)/2),]
+bank_success
+```
+```{r}
+set.seed(1)
+bank_failure <- failure[sample(nrow(failure),nrow(success)/2),]
+bank_failure
+```
+```{r}
+bank_data <- rbind(bank_success,bank_failure)
+t_bank_data <- rbind(bank_success,bank_failure)
+bank_data
+```
+```{r}
+summary(bank_data)
+```
+
+# Converting Job variable into dummy variable
+```{r}
+#install.packages("dummies")
+cbind(bank_data,dummy(bank_data$job, sep = "_"))
+job_dummy <- dummy(bank_data$job, sep = "_")
+job_dummy
+
+bank_data$job <- NULL
+bank_data
+```
+# Converting Marital variable into dummy variable
+```{r}
+cbind(bank_data,dummy(bank_data$marital, sep = "_"))
+marital_dummy <- dummy(bank_data$marital, sep = "_")
+marital_dummy
+
+bank_data$marital <- NULL
+bank_data
+```
+# Converting Education variable into dummy variable
+```{r}
+cbind(bank_data,dummy(bank_data$education, sep = "_"))
+education_dummy <- dummy(bank_data$education, sep = "_")
+education_dummy
+
+bank_data$education <- NULL
+bank_data
+```
+# Converting Contact variable into dummy variable
+```{r}
+cbind(bank_data,dummy(bank_data$contact, sep = "_"))
+education_dummy <- dummy(bank_data$contact, sep = "_")
+education_dummy
+
+bank_data$contact <- NULL
+bank_data
+```
+# Converting Month variable into dummy variable
+```{r}
+cbind(bank_data,dummy(bank_data$month, sep = "_"))
+month_dummy <- dummy(bank_data$month, sep = "_")
+month_dummy
+
+bank_data$month <- NULL
+bank_data
+```
+# Converting poutcome variable into dummy variable
+```{r}
+bank_data$poutcome <- as.numeric(as.character(factor(bank_data$poutcome,levels=c('failure','success','other','unknown'),labels =c(0,1,2,4) )))
+                    
+bank_data$poutcome
+
+#cbind(bank_data,dummy(bank_data$poutcome, sep = "_"))
+#pouctome_dummy <- dummy(bank_data$poutcome, sep = "_")
+#pouctome_dummy
+
+#bank_data$poutcome <- NULL
+bank_data
+```
+# Converting default categorical variable into numerical
+```{r}
+bank_data$default <- as.numeric(as.character(factor(bank_data$default,levels=c('yes','no'),
+                    labels =c(1,0) )))
+bank_data$default
+```
+# Converting housing categorical variable into numerical
+```{r}
+bank_data$housing <- as.numeric(as.character(factor(bank_data$housing,levels=c('yes','no'),
+                    labels =c(1,0) )))
+bank_data$housing
+```
+# Converting loan categorical variable into numerical
+```{r}
+bank_data$loan <- as.numeric(as.character(factor(bank_data$loan,levels = c('yes','no'),
+                    labels =c(1,0) )))
+bank_data$loan
+```
+# Converting y categorical variable into numerical
+```{r}
+#bank_data$y <- as.numeric(as.character(factor(bank_data$y,levels = c('yes','no'),
+#                    labels =c(1,0))))
+#bank_data$y
+```
+```{r}
+View(bank_data)
+```
+# Creating New Dataset with the required Columns
+```{r}
+bank_dataset <- cbind(job_dummy,marital_dummy,education_dummy,month_dummy,(bank_data))
+View(bank_dataset)
+```
+# Normalising the data
+```{r}
+normalize_data <- bank_dataset
+norm.values <- preProcess(normalize_data[,1:41], method = c("center", "scale"))
+normalize_data[,1:41] <- predict(norm.values, normalize_data[,1:41])
+View(normalize_data)
+```
+
+# Dividing Data into Training Set, Validation Set and Test Set
+```{r}
+set.seed(1)
+idx <- sample(seq(1, 3), size = nrow(normalize_data), replace = TRUE, prob = c(.7, .2, .1))
+train.df <- normalize_data[idx == 1,]
+valid.df <- normalize_data[idx == 2,]
+test.df <- normalize_data[idx == 3,]
+
+nrow(train.df)
+nrow(valid.df)
+nrow(test.df)
+#train.index <- sample(row.names(normalize_data),0.8*dim(normalize_data)[1])
+#valid.index <- setdiff(row.names(normalize_data),train.index)
+#train.df <- normalize_data[train.index,]
+#valid.df <- normalize_data[valid.index,]
+```
+# Point Biserial Correlation to find relation between continuous and categorical data
+install.packages("ltm")
+```{r}
+cont_data <- cbind(bank.full[,c(1,6,10,12:15)])
+cat_data <- cbind(bank.full[,c(2:5,7:9,11,16)])
+View(cat_data)
+View(cont_data)
+biserial.cor(bank.full$age, bank.full$y, use = c("all.obs", "complete.obs"), level = 1)
+``` 
+
+# Finding Correlations Among Continuous Variable
+```{r}
+cor_data <- train.df[c('age','balance','day','duration','campaign','pdays','previous')]
+cor(cor_data)
+```
+# Boxplots (Comparing the Predictors with the Output Variable)
+```{r}
+par(mfrow=c(2,2))
+boxplot(train.df$age ~ train.df$y,main="Age", col=c('powderblue', 'mistyrose'))
+boxplot(train.df$balance ~ train.df$y,main="Balance", col=c('powderblue', 'mistyrose'))
+boxplot(train.df$day ~ train.df$y,main="day", col=c('powderblue', 'mistyrose'))
+boxplot(train.df$duration ~ train.df$y,main="duration", col=c('powderblue', 'mistyrose'))
+boxplot(train.df$campaign ~ train.df$y,main="campaign", col=c('powderblue', 'mistyrose'))
+boxplot(train.df$pdays ~ train.df$y,main="pdays", col=c('powderblue', 'mistyrose'))
+boxplot(train.df$previous ~ train.df$y,main="previous", col=c('powderblue', 'mistyrose'))
+```
+# Interpretation for Box Plots
+1. Longer Duration of calls results in that person will deposit in the bank
+2. Pdays i.e. person contacted in the past also contibutes to outcome variable
+3. People contacted more leads to person deposition in the bank
+4. Other predictors including Age and Balance very much impacts the outcome variable in both      i.e. yes and no
+
+# Function for Multiplot to plot multiple graphs together
+```{r}
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+# GGPLOT for Marital with the other predictors    
+```{r}
+marital_duration<-summarise(group_by(bank.full,marital),duration=mean(duration))
+marital_duration
+p1<-ggplot(marital_duration,aes(x=marital,y=duration,fill=marital))+
+geom_bar(stat='identity')
+
+marital_balance<-summarise(group_by(bank.full,marital),balance=mean(balance))
+marital_balance
+p2<-ggplot(marital_balance,aes(x=marital,y=balance,fill=marital))+ geom_bar(stat='identity')
+
+marital_age<-summarise(group_by(bank.full,marital),age=mean(age))
+marital_age
+p3<-ggplot(marital_age,aes(x=marital,y=age,fill=marital))+ geom_bar(stat='identity')
+
+marital_pdays<-summarise(group_by(bank.full,marital),pdays=mean(pdays))
+marital_pdays
+p4<-ggplot(marital_pdays,aes(x=marital,y=pdays,fill=marital))+ geom_bar(stat='identity')
+
+multiplot(p1, p2, p3, p4, cols=2)
+```
+
+# GGPLOT for Job Variable with the other predictors  
+```{r}
+job_duration<-summarise(group_by(bank.full,job),duration=mean(duration))
+job_duration
+p1<-ggplot(job_duration,aes(x=job,y=duration,fill=job))+
+geom_bar(stat='identity')+theme(axis.text.x = element_text(angle = 45,
+hjust = 1, vjust = 0.5))
+
+job_balance<-summarise(group_by(bank.full,job),balance=mean(balance))
+job_balance
+p2<-ggplot(job_balance,aes(x=job,y=balance,fill=job))+
+geom_bar(stat='identity')+theme(axis.text.x = element_text(angle = 45,
+hjust = 1, vjust = 0.5))
+
+job_age<-summarise(group_by(bank.full,job),age=mean(age))
+job_age
+p3<-ggplot(job_age,aes(x=job,y=age,fill=job))+
+geom_bar(stat='identity')+theme(axis.text.x = element_text(angle = 45,
+hjust = 1, vjust = 0.5))
+
+job_pdays<-summarise(group_by(bank.full,job),pdays=mean(pdays))
+job_pdays
+p4<-ggplot(job_pdays,aes(x=job,y=pdays,fill=job))+
+geom_bar(stat='identity')+theme(axis.text.x = element_text(angle = 45,
+hjust = 1, vjust = 0.5))
+
+multiplot(p1, p2, p3, p4, cols=2)
+```
+
+# GGPLOT for Education with the other predictors  
+```{r}
+education_duration<-summarise(group_by(bank.full,education),duration=mean(duration))
+education_duration
+p1<-ggplot(education_duration,aes(x=education,y=duration,fill=education))+
+geom_bar(stat='identity')
+
+education_balance<-summarise(group_by(bank.full,education),balance=mean(balance))
+education_balance
+p2<-ggplot(education_balance,aes(x=education,y=balance,fill=education))+
+geom_bar(stat='identity')
+
+education_age<-summarise(group_by(bank.full,education),age=mean(age))
+education_age
+p3<-ggplot(education_age,aes(x=education,y=age,fill=education))+ geom_bar(stat='identity')
+
+education_pdays<-summarise(group_by(bank.full,education),age=mean(pdays))
+education_pdays
+p4<-ggplot(education_pdays,aes(x=education,y=age,fill=education))+ geom_bar(stat='identity')
+
+multiplot(p1, p2, p3, p4, cols=2)
+```
+
+# GGPLOT for outcome Y with the other predictors  
+```{r}
+ggplot(bank.full,aes(x=education,fill=education))+ geom_bar(stat='count',aes(fill =
+factor(y)),position = position_dodge(width = 0.9))
+
+ggplot(bank.full,aes(x=marital,fill=marital))+ geom_bar(stat='count',aes(fill =
+factor(y)),position = position_dodge(width = 0.9))
+
+ggplot(bank.full,aes(x=job,fill=job))+ geom_bar(stat='count',aes(fill =
+factor(y)),position = position_dodge(width = 0.9))+theme(axis.text.x =
+element_text(angle = 45, hjust = 1, vjust = 0.5))
+
+ggplot(bank.full,aes(x=contact,fill=contact))+ geom_bar(stat='count',aes(fill =
+factor(y)),position = position_dodge(width = 0.9))
+```
+
+# Contact vs Age Predictor
+```{r}
+ggplot(bank.full,aes(x=contact,fill=contact))+ geom_bar(stat='count',aes(fill =
+factor(age)),position = position_dodge(width = 0.9))
+```
+
+# Scatter Plot Between Age and other Continuous Variables
+```{r}
+par(mfrow=c(2,2))
+plot(log(train.df$age), log(train.df$balance), main = "Age Vs Balance", xlab = "Age", ylab = "Balance", col = 2)
+abline(lm(log(train.df$balance) ~ log(train.df$age)))
+
+plot(log(train.df$age), log(train.df$duration), main = "Age Vs Duration", xlab = "Age", ylab = "Duration", col = 2)
+abline(lm(log(train.df$duration) ~ log(train.df$age)))
+
+plot(log(train.df$age), log(train.df$pdays), main = "Age Vs Days Past", xlab = "Age", ylab = "Days Past", col = 2)
+abline(lm(log(train.df$pdays) ~ log(train.df$age)))
+
+plot(log(train.df$age), log(train.df$previous), main = "Age Vs Previously Contacted", xlab = "Age", ylab = "Previously Contacted", col = 2)
+abline(lm(log(train.df$previous) ~ log(train.df$age)))
+
+plot(log(train.df$age), log(train.df$day), main = "Age Vs Day", xlab = "Age", ylab = "Day", col = 2)
+abline(lm(log(train.df$day) ~ log(train.df$age)))
+
+plot(log(train.df$age), log(train.df$campaign), main = "Age Vs Campaign", xlab = "Age", ylab = "Campaign", col = 2)
+abline(lm(log(train.df$campaign) ~ log(train.df$age)))
+```
+# Scatter Plot Between Balance and other Continuous Variables
+```{r}
+par(mfrow=c(2,2))
+plot(log(train.df$balance), log(train.df$duration), main = "Duration Vs Balance", xlab = "Balance", ylab = "Duration", col = 2)
+abline(lm(log(train.df$duration) ~ log(train.df$balance)))
+
+plot(log(train.df$duration), log(train.df$pdays), main = "Duration Vs Days Past", xlab = "Duration", ylab = "Days Past", col = 2)
+abline(lm(log(train.df$pdays) ~ log(train.df$duration)))
+
+plot(log(train.df$duration), log(train.df$previous), main = "Duration Vs Previously Contacted", xlab = "Duration", ylab = "Previously Contacted", col = 2)
+abline(lm(log(train.df$previous) ~ log(train.df$duration)))
+
+plot(log(train.df$duration), log(train.df$day), main = "Duration Vs Day", xlab = "Duration", ylab = "Day", col = 2)
+abline(lm(log(train.df$day) ~ log(train.df$duration)))
+
+plot(log(train.df$duration), log(train.df$campaign), main = "Duration Vs Campaign", xlab = "Duration", ylab = "Campaign", col = 2)
+abline(lm(log(train.df$campaign) ~ log(train.df$duration)))
+```
+
+# Interpretation for Scatter Plots
+1. Balance have a positive relation with the Age
+2. Days, Duration, Pdays, Previous, Day and Campaign have a negative or no relation with the      Age predictor
+3. Campagin has positive relation with the Duration
+4. Balance have negative relation with the Duration
+5. Pdays, Previous and Day have no relation with the Duration predictor
+
+# Principal Component Analysis on Continuous Predictors
+install.packages("readxl")
+install.packages('psych')
+```{r}
+#install.packages("readxl")
+#install.packages('psych')
+normal_data <- train.df[,c(31,33,36:40)]
+fa.parallel(normal_data, fm="pa", main = "Scree Plot With Parallel Analysis")
+```
+```{r}
+pc <- principal(r = normal_data, nfactor = 3, rotate = "none")
+pc
+```
+# Performing Rotation
+```{r}
+pc_rotate <- principal(cont_data, nfactor = 3, rotate = "varimax")
+pc_rotate
+```
+```{r}
+pc_score <- principal(normal_data, nfactor = 3, scores = TRUE)
+head(pc_score$scores)
+```
+```{r}
+factor.plot(pc_rotate, labels = rownames(pc_rotate$loadings))
+```
+
+# Interpretation
+1. Parallel Analysis suggests that Number of components to extract should be equal to 3 since 3 variables have eigenvalue greater than 1.
+2. Together all the components accounts to about 40 percent of the cumulative Variance both before and after rotating the components.
+3. There is no such major changes in the Proportion and Cumulative variance after rotating the components.
+4. The loading in RC1 indicates that first component is primarily defined by pdays and            previous variables.
+5. While loading in RC2 indicates that second component is primarily defined by day and campaign
+
+# Applying Models
+
+# Applying Logistic Regression Model to select the relevant predictors (Dimension Reduction)
+```{r}
+logit_model <- glm(y ~ .,data = train.df, family = binomial(link = "logit"))
+summary(logit_model)
+```
+
+```{r}
+# Calculating Odds Value
+#data.frame(summary(logit_model)$coefficients, odds = exp(coef(logit_model)))
+#round(data.frame(summary(logit_model)$coefficients, odds = exp(coef(logit_model))), 5)
+data.frame(exp(coef(logit_model))) 
+```
+
+# From the Logistic Regression Model, the following predictors have significant impact on the outcome i.e. either positive or negative:
+1. contact_cellular
+2. contact_telephone
+3. month_aug
+4. month_jan
+5. month_jul
+6. month_may
+7. month_nov
+8. poutcome
+9. housing
+10. loan
+11. duration
+
+```{r}
+predicted <- predict(logit_model, valid.df, type = "link")
+predicted
+result <- ifelse(predicted > 0.5,"yes","no")
+
+confusionMatrix(as.factor(result), valid.df$y)
+```
+# Based on Domain Knowldege the following selected predictors does not seem relevant predictors to train or make the model :
+1. contact_cellular
+2. contact_telephone
+3. month_aug
+4. month_jan
+5. month_jul
+6. month_may
+7. month_nov
+
+# There, we are left with the following predictors
+1. poutcome
+2. housing
+3. loan
+4. duration
+
+# Dataset with the required predictors
+```{r}
+testing_data <- data.frame(train.df[,c(16,17,20,23,24,27,28,34,35,37,41,42)])
+testing_data
+testing_valid <- data.frame(valid.df[,c(16,17,20,23,24,27,28,34,35,37,41,42)])
+testing_valid
+
+ds_train <- data.frame(train.df[,c(34,35,37,41,42)])
+ds_train
+
+ds_valid <- data.frame(valid.df[,c(34,35,37,41,42)])
+ds_valid
+
+ds_test <- data.frame(test.df[,c(34,35,37,41,42)])
+ds_test
+```
+
+# Logistic Regression Model
+
+# With all the predictors given by Logistic Regression Model
+```{r}
+logit_model <- glm(y ~ .,data = testing_data, family = "binomial")
+summary(logit_model)
+predicted <- predict(logit_model, testing_valid, type = "link")
+predicted
+result <- ifelse(predicted > 0.5,"yes","no")
+
+confusionMatrix(as.factor(result), valid.df$y)
+```
+
+# Based on the predictors given by Logistic Regression Model and Domain Knowldege
+```{r}
+logit_model <- glm(y ~ .,data = ds_train, family = "binomial")
+summary(logit_model)
+predicted <- predict(logit_model, ds_valid, type = "link")
+predicted
+result <- ifelse(predicted > 0.5,"yes","no")
+
+confusionMatrix(as.factor(result), valid.df$y)
+```
+# Test Measures given by Logistic Regression Model are as follows:
+1. Accuracy : 72.62%
+2. Sensitivity : 69.82% 
+3. Specificity : 75.3% 
+
+# ROC Curve
+```{r}
+#install.packages('pROC')
+par(pty = "s")
+info <- roc(ds_train$y, logit_model$fitted.values,plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for Logistic Regression",col="#377eb8",lwd=3,print.auc=TRUE)
+info
+```
+```{r}
+roc.df <- data.frame(tpp=info$sensitivities*100,
+                     fpp=(1-info$specificities)*100,
+                     thresholds=info$thresholds)
+head(roc.df)
+```
+```{r}
+tail(roc.df)
+```
+
+# Time Taken by Logistic Regression Model to Execute
+```{r}
+t1 <- Sys.time()
+logit_model <- glm(y ~ .,data = ds_train, family = "binomial")
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+
+# Applying KNN Model
+```{r}
+#install.packages('FNN')
+knn.pred <- knn(train=ds_train[,-5],test = ds_valid[,-5], cl =
+                  ds_train$y, k=1)
+accuracy.df <- confusionMatrix(table(knn.pred, valid.df$y))
+accuracy.df
+```
+```{r}
+#install.packages('FNN')
+
+accuracy.df <- data.frame(k=seq(1,14,1), accuracy = rep(0,14))
+
+for(i in 1:14){
+  
+  knn.pred <- knn(train=ds_train[,-5],test = ds_valid[,-5], cl =
+                  ds_train$y, k=i)
+  
+ accuracy.df[i,2]<- confusionMatrix(table(knn.pred,valid.df$y))$overall[1]
+}
+accuracy.df
+```
+# From the above KNN Models, the model with K=11 is the best model as it gives the best accuracy of 78.80%
+```{r}
+#install.packages('FNN')
+knn.pred <- knn(train=ds_train[,-5],test = ds_valid[,-5], cl =
+                  ds_train$y, k=11)
+accuracy.df <- confusionMatrix(table(knn.pred, valid.df$y))
+accuracy.df
+```
+
+# Time Taken by KNN Model to Execute
+```{r}
+t1 <- Sys.time()
+knn.pred <- knn(train=ds_train[,-5],test = ds_valid[,-5], cl =
+                  ds_train$y, k=11)
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+
+# ROC Curve
+```{r}
+knn.pred <- knn(train=ds_train[,-5],test = ds_valid[,-5], cl =
+                  ds_train$y, k=11,prob = TRUE)
+scores.knn <- attr(knn.pred,"prob")
+
+par(pty = "s")
+info <- roc(ds_valid$y, scores.knn,plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for KNN Model",col="orange",lwd=3,print.auc=TRUE)
+info
+```
+
+# Creating Training and Validation set for other models as these does not take the dummy variables
+```{r}
+f_data <- t_bank_data
+
+set.seed(1)
+idx <- sample(seq(1, 3), size = nrow(f_data), replace = TRUE, prob = c(.7, .2, .1))
+t.train.df <- f_data[idx == 1,]
+v.valid.df <- f_data[idx == 2,]
+t.test.df <- f_data[idx == 3,]
+#t.train.index <- sample(row.names(f_data),0.8*dim(f_data)[1])
+#v.valid.index <- setdiff(row.names(f_data),t.train.index)
+#t.train.df <- f_data[t.train.index,]
+#v.valid.df <- f_data[v.valid.index,]
+```
+
+# Applying Classification Tree Model
+#1. On Whole Dataset
+```{r}
+class.tree <- rpart(y ~ .,data = t.train.df, control = rpart.control(maxdepth = 7), method = "class", minbucket = 50)
+prp(class.tree, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10)
+```
+```{r}
+printcp(class.tree)
+```
+
+```{r}
+pred.tree <- predict(class.tree, v.valid.df, type = "class")
+confusionMatrix(pred.tree,as.factor(v.valid.df$y))
+```
+# Test Measures given by Classification tree are as follows:
+1. Accuracy : 78.61%
+2. Sensitivity : 79.89% 
+3. Specificity : 77.31% 
+
+# Cross Validation
+```{r}
+cv.ct <- rpart(y~ ., data = t.train.df[c(2,9,11,12,16,17)], method = "class", cp = 0.00001, minsplit = 5, xval = 5)
+printcp(cv.ct)
+```
+
+# Pruning the Tree
+```{r}
+pruned.ct <- prune(cv.ct, cp = cv.ct$cptable[which.min(cv.ct$cptable[,"xerror"]),"CP"])
+length(pruned.ct$frame$var[pruned.ct$frame$var == "<leaf>"])
+prp(pruned.ct, type = 1, extra = 1, split.font = 1, varlen = -10)
+```
+```{r}
+pred.tree <- predict(pruned.ct, v.valid.df, type = "class")
+confusionMatrix(pred.tree,as.factor(v.valid.df$y))
+```
+# Test Measures after Pruning the tree are as follows:
+1. Accuracy : 78.9%
+2. Sensitivity : 79.89% 
+3. Specificity : 77.88% 
+
+# Time Taken by Classification Tree Model to Execute
+```{r}
+t1 <- Sys.time()
+cv.ct <- rpart(y~ ., data = t.train.df[-c(1:3,5,6,8,10)], method = "class", cp = 0.00001, minsplit = 5, xval = 5)
+pruned.ct <- prune(cv.ct, cp = cv.ct$cptable[which.min(cv.ct$cptable[,"xerror"]),"CP"])
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+
+# ROC Curve 
+```{r}
+tree.pred <- predict(pruned.ct, v.valid.df, type = "class")
+table_data <- table(prediction = tree.pred,actual=v.valid.df$y)
+
+# Accuracy Metric
+sum(diag(table_data))/sum(table_data)
+
+pred.tree <- predict(pruned.ct, v.valid.df, type = "prob")
+par(pty = "s")
+info <- roc(v.valid.df$y, pred.tree[,2],plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for Classification Tree Model",col="purple",lwd=3,print.auc=TRUE)
+info
+```
+#2. Applying Classification Tree with selected predictors i.e.
+1. poutcome
+2. housing
+3. loan
+4. duration
+
+```{r}
+s_traindata <- t.train.df[c(7,8,12,16,17)]
+s_validdata <- v.valid.df[c(7,8,12,16,17)]
+s_testdata <- t.test.df[c(7,8,12,16,17)]
+```
+```{r}
+class.tree <- rpart(y ~ .,data = s_traindata, control = rpart.control(maxdepth = 7), method = "class", minbucket = 50)
+prp(class.tree, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10)
+```
+```{r}
+pred.tree <- predict(class.tree, s_validdata, type = "class")
+confusionMatrix(pred.tree,as.factor(s_validdata$y))
+```
+# Cross Validation
+```{r}
+cv.ct <- rpart(y~ ., data = s_traindata, method = "class", cp = 0.00001, minsplit = 5, xval = 5)
+printcp(cv.ct)
+```
+# Pruning the Tree
+```{r}
+pruned.ct <- prune(cv.ct, cp = cv.ct$cptable[which.min(cv.ct$cptable[,"xerror"]),"CP"])
+length(pruned.ct$frame$var[pruned.ct$frame$var == "<leaf>"])
+prp(pruned.ct, type = 1, extra = 1, split.font = 1, varlen = -10)
+```
+```{r}
+pred.tree <- predict(pruned.ct, s_validdata, type = "class")
+confusionMatrix(pred.tree,as.factor(s_validdata$y))
+```
+# Time Taken by Classification Tree Model to Execute
+```{r}
+t1 <- Sys.time()
+cv.ct <- rpart(y~ ., data = s_traindata, method = "class", cp = 0.00001, minsplit = 5, xval = 5)
+pruned.ct <- prune(cv.ct, cp = cv.ct$cptable[which.min(cv.ct$cptable[,"xerror"]),"CP"])
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+# ROC Curve 
+```{r}
+pred.tree <- predict(pruned.ct, s_validdata, type = "prob")
+par(pty = "s")
+info <- roc(s_validdata$y, pred.tree[,2],plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for Classification Tree Model",col="purple",lwd=3,print.auc=TRUE)
+info
+```
+
+# Applying Random Forest Model
+```{r}
+## random forest
+rf <- randomForest(as.factor(y) ~ ., data = s_traindata, ntree = 100,
+mtry = 4, nodesize = 5, importance = TRUE)
+rf
+```
+
+```{r}
+varImpPlot(rf, type = 1)
+```
+```{r}
+rf.pred <- predict(rf, s_validdata)
+confusionMatrix(rf.pred, s_validdata$y)
+```
+# Test Measures given by Random Forest Model are as follows:
+1. Accuracy : 83.56%
+2. Sensitivity : 82.33% 
+3. Specificity : 84.81% 
+
+# Time Taken by Random Forest Model to Execute
+```{r}
+t1 <- Sys.time()
+rf <- randomForest(as.factor(y) ~ ., data = s_traindata, ntree = 100,
+mtry = 4, nodesize = 5, importance = TRUE)
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+
+# ROC Curve 
+```{r}
+par(pty = "s")
+info <- roc(s_traindata$y, rf$votes[,1],plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for Random Forest Model",col="#4daf4a",lwd=3,print.auc=TRUE)
+info
+```
+
+# Boosting the Tree
+```{r}
+#install.packages('adabag')
+s_traindata$y <- as.factor(s_traindata$y)
+set.seed(1)
+boost <- boosting(y ~ ., data = s_traindata)
+pred <- predict(boost, s_validdata)
+confusionMatrix(as.factor(pred$class), as.factor(s_validdata$y))
+```
+# Test Measures given after Boosting the tree are as follows:
+1. Accuracy : 80.99%
+2. Sensitivity : 80.83% 
+3. Specificity : 81.15% 
+
+# Time Taken by Random Forest Model to Execute After Boosting the Tree
+```{r}
+t1 <- Sys.time()
+rf <- boost <- boosting(y ~ ., data = s_traindata)
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+# ROC Curve 
+```{r}
+par(pty = "s")
+info <- roc(s_traindata$y, boost$votes[,1],plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for Boosted Tree",col="#4daf4a",lwd=3,print.auc=TRUE)
+info
+```
+
+# Interpretation:
+Based on the Accuracy and Confidence Interval, the following models seems convenient and will be used further.
+1. KNN (with K=11)
+2. Classification Tree(Pruned)
+3. Random Forest Classification Model(Boosted)
+
+Now we will implement these models on the test data with the relevant predictors
+
+# 1. KNN Model
+```{r}
+knn.pred <- knn(train=ds_train[,-5],test = ds_test[,-5], cl =
+                  ds_train$y, k=11)
+accuracy.df <- confusionMatrix(table(knn.pred, ds_test$y))
+accuracy.df
+```
+# ROC Curve
+```{r}
+knn.pred <- knn(train=ds_train[,-5],test = ds_test[,-5], cl =
+                  ds_train$y, k=11,prob = TRUE)
+scores.knn <- attr(knn.pred,"prob")
+
+par(pty = "s")
+info <- roc(ds_test$y, scores.knn,plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for KNN Model",col="orange",lwd=3,print.auc=TRUE)
+info
+```
+# Time Taken by KNN Model to Execute
+```{r}
+t1 <- Sys.time()
+knn.pred <- knn(train=ds_train[,-5],test = ds_test[,-5], cl =
+                  ds_train$y, k=11)
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+
+#2. Classification Tree(Pruned) Model
+```{r}
+class.tree <- rpart(y ~ .,data = s_traindata, control = rpart.control(maxdepth = 7), method = "class", minbucket = 50)
+prp(class.tree, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10)
+```
+# Cross Validation
+```{r}
+cv.ct <- rpart(y~ ., data = s_traindata, method = "class", cp = 0.00001, minsplit = 5, xval = 5)
+printcp(cv.ct)
+```
+# Pruning the Tree
+```{r}
+pruned.ct <- prune(cv.ct, cp = cv.ct$cptable[which.min(cv.ct$cptable[,"xerror"]),"CP"])
+length(pruned.ct$frame$var[pruned.ct$frame$var == "<leaf>"])
+prp(pruned.ct, type = 1, extra = 1, split.font = 1, varlen = -10)
+```
+```{r}
+pred.tree <- predict(pruned.ct, s_testdata, type = "class")
+confusionMatrix(pred.tree,as.factor(s_testdata$y))
+```
+# Time Taken by Classification Tree Model to Execute
+```{r}
+t1 <- Sys.time()
+cv.ct <- rpart(y~ ., data = s_traindata, method = "class", cp = 0.00001, minsplit = 5, xval = 5)
+pruned.ct <- prune(cv.ct, cp = cv.ct$cptable[which.min(cv.ct$cptable[,"xerror"]),"CP"])
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+# ROC Curve 
+```{r}
+pred.tree <- predict(pruned.ct, s_testdata, type = "prob")
+par(pty = "s")
+info <- roc(s_testdata$y, pred.tree[,2],plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for Pruned Tree Model",col="purple",lwd=3,print.auc=TRUE)
+info
+```
+
+
+# 3. Random Forest Classification Model(Boosted)
+```{r}
+rf <- randomForest(as.factor(y) ~ ., data = s_traindata, ntree = 100,
+mtry = 4, nodesize = 5, importance = TRUE)
+rf.pred <- predict(rf, s_testdata)
+confusionMatrix(rf.pred, s_testdata$y)
+```
+# Boosting the Tree
+```{r}
+#install.packages('adabag')
+s_traindata$y <- as.factor(s_traindata$y)
+set.seed(1)
+boost <- boosting(y ~ ., data = s_traindata)
+pred <- predict(boost, s_testdata)
+confusionMatrix(as.factor(pred$class), as.factor(s_testdata$y))
+```
+# ROC Curve 
+```{r}
+par(pty = "s")
+info <- roc(s_traindata$y, boost$votes[,1],plot = TRUE,legacy.axes=TRUE,percent = TRUE, xlab="False Positive Percentage",ylab="True Positive Percentage" ,main = "ROC Curve for Boosted Tree",col="#4daf4a",lwd=3,print.auc=TRUE)
+info
+```
+# Time Taken by Random Forest Model to Execute After Boosting the Tree
+```{r}
+t1 <- Sys.time()
+rf <- boost <- boosting(y ~ ., data = s_traindata)
+t2 <- Sys.time()
+time_taken <- t2-t1
+time_taken
+```
+
+# Interpretations:
+1. Boosted tree gave the maximum Area Under Curve and best accuracy but also took maximum time to execute.
+2. Pruned Tree also gave accuracy close to Boosted tree and 84.2% area under the curve. It also took very less time to execute as compared to the Boosted tree.
+3. The KNN model took the least time to execute and a good accuracy but it gave worst Area Under Curve i.e 41.8%.
+
+# Overall Boosted Tree seems to be the most convenient model to be used for this application.
+
+
+
+
+
+
