@@ -17,3 +17,5 @@ that will decide that whether a client would subscribe a bank term deposit or no
 	Another important dimension for this project is finding the profiling factors/correlation 
 between the various attributes and how they can impact the response of the clients.
 
+[Visualisation.pdf](https://github.com/akhtarfarooque/Data-Mining/files/5811728/Visualisation.pdf)
+
